@@ -77,6 +77,11 @@ public:
   // phase in multi-phase algorithms
   mutable int ph;
 
+  // collective schedule (sim_type = collective)
+  int msg_id;
+  int dim_order;
+  int tie_dir;
+
   // Fields for arbitrary data
   void* data ;
 

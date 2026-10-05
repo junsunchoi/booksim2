@@ -79,6 +79,9 @@ void Flit::Reset()
   pri = 0;
   intm =-1;
   ph = -1;
+  msg_id = -1;
+  dim_order = 0;
+  tie_dir = 0;
   data = 0;
 }  
 

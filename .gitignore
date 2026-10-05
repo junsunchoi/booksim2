@@ -3,3 +3,12 @@
 ._*
 .Apple*
 .DS_Store
+*.csv
+*.txt
+*.log
+*.pyc
+__pycache__/
+
+# expert-routing: matrices ship as ep*/deepseek_ep*_traffic_csv.zip (unzipped
+# copies stay ignored); keep the per-file plot data
+!expert-routing/*/plots/*.csv

@@ -47,6 +47,9 @@
 #include "fattree.hpp"
 #include "anynet.hpp"
 #include "dragonfly.hpp"
+#include "hyperx.hpp"
+#include "multilinktorus.hpp"
+#include "clos.hpp"
 
 
 Network::Network( const Configuration &config, const string & name ) :
@@ -111,6 +114,15 @@ Network * Network::New(const Configuration & config, const string & name)
   } else if ( topo == "dragonflynew"){
     DragonFlyNew::RegisterRoutingFunctions() ;
     n = new DragonFlyNew(config, name);
+  } else if ( topo == "hyperx" ) {
+    HyperX::RegisterRoutingFunctions() ;
+    n = new HyperX(config, name);
+  } else if ( topo == "multilinktorus" ) {
+    MultiLinkTorus::RegisterRoutingFunctions() ;
+    n = new MultiLinkTorus(config, name);
+  } else if ( topo == "clos" ) {
+    Clos::RegisterRoutingFunctions() ;
+    n = new Clos(config, name);
   } else {
     cerr << "Unknown topology: " << topo << endl;
   }

@@ -65,6 +65,23 @@ BookSimConfig::BookSimConfig( )
   _int_map["yr"] = 1; //number of nodes per router in Y only if c>1
 
 
+  //==== hyperx / multilinktorus (per-dimension full / ring) =======
+  AddStrField( "dim_sizes", "" );          // e.g. {4,4,4}
+  _int_map["hyperx_c"] = 0;                // terminals per router, 0 = one per network port
+  _int_map["hyperx_link_latency"] = 1;
+  _int_map["hyperx_single_hop_all_vcs"] = 1;
+  _int_map["multilinktorus_c"] = 0;        // terminals per router, 0 = one per network port
+  _int_map["multilinktorus_link_latency"] = 1;
+  _int_map["multilinktorus_single_hop_all_vcs"] = 1;
+
+  //==== clos (1 or 2 level rail-optimized, one terminal per GPU port) =======
+  _int_map["clos_gpus"] = 64;
+  _int_map["clos_gpu_ports"] = 16;         // ports (rails) per GPU
+  _int_map["clos_radix"] = 64;
+  _int_map["clos_levels"] = 0;             // 0 = 1 if clos_gpus <= clos_radix, else 2
+  _int_map["clos_link_latency"] = 1;
+  _int_map["clos_always_up"] = 0;          // 1 = same-L1 traffic also turns around at an L2 switch
+
   _int_map["link_failures"] = 0; //legacy
   _int_map["fail_seed"]     = 0; //legacy
   AddStrField( "fail_seed", "" ); // workaround to allow special "time" value
@@ -227,6 +244,17 @@ BookSimConfig::BookSimConfig( )
   //   throughput - sustained throughput for a particular injection rate
 
   AddStrField( "sim_type", "latency" );
+
+  // sim_type = collective
+  AddStrField( "trace_file", "" );
+  AddStrField( "trace_out", "" );
+  AddStrField( "trace_packets_out", "" );  // per-packet CSV, empty = off
+  AddStrField( "link_timeline_out", "" );  // per-window flits per link/inject/eject channel CSV
+  _int_map["link_timeline_window"] = 256;
+  AddStrField( "trace_order", "rr" );  // rr | fifo, per injection terminal
+  _int_map["trace_max_cycles"] = 0;    // 0 = no limit
+  _int_map["packet_header_flits"] = 0; // collective: overhead flits per packet,
+                                       // on top of up to packet_size payload flits
 
   _int_map["warmup_periods"] = 3; // number of samples periods to "warm-up" the simulation
 
