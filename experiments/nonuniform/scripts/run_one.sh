@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Non-uniform vs. uniform A2A for one expert-routing token matrix (16 B flits).
-# usage: experiments/nonuniform/run_one.sh <matrix.csv> [64|256] [outdir]
+# usage: experiments/nonuniform/scripts/run_one.sh <matrix.csv> [64|256] [outdir]
 # Runs from the repository root. Schedules, logs and a summary.csv go to outdir
 # (default experiments/nonuniform/f16/<batch>_<layer>_<iteration>).
 set -u

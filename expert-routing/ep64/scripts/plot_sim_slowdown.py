@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """BookSim non-uniform A2A slowdown vs MoE layer, one panel per batch size.
 
-Reads the sweep results (experiments/nonuniform/sweep.py): per CSV matrix, the
+Reads the no-EPLB sweep results (experiments/nonuniform/results/fp16/<topo>/ep64/
+b<batch>_noeplb/results.csv): per CSV matrix, the
 simulated completion time of the non-uniform A2A divided by the uniform-like
 A2A time, for torus 4x4x4 (snf HalfRing + DimRotation, phase barrier, rounds
 synced per dim), full mesh 4x4x4 (snf DimRotation) and Clos 64 (one-shot ct,
@@ -9,9 +10,10 @@ internal_speedup = 2.0). Dots = the 5 sampled iterations of a layer; line =
 median over them.
 
 Writes expert-routing/ep64/plots/sim_slowdown_by_layer.png.
-usage: plot_sim_slowdown.py [results.csv] [outdir]
+usage: plot_sim_slowdown.py [outdir] [results.csv ...]
 """
 import csv
+import glob
 import os
 import sys
 from collections import defaultdict
@@ -21,8 +23,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-results = sys.argv[1] if len(sys.argv) > 1 else "experiments/nonuniform/sweep64_remote/results.csv"
-outdir = sys.argv[2] if len(sys.argv) > 2 else "expert-routing/ep64/plots"
+outdir = sys.argv[1] if len(sys.argv) > 1 else "expert-routing/ep64/plots"
+results = sys.argv[2:] or sorted(glob.glob("experiments/nonuniform/results/fp16/*/ep64/b*_noeplb/results.csv"))
 os.makedirs(outdir, exist_ok=True)
 
 TOPOS = [("torus", "Torus 4x4x4", "#2a78d6", "o", -0.22),
@@ -30,8 +32,8 @@ TOPOS = [("torus", "Torus 4x4x4", "#2a78d6", "o", -0.22),
          ("clos", "Clos 64", "#1baf7a", "^", 0.22)]
 
 data = defaultdict(lambda: defaultdict(list))  # (batch, topo) -> layer -> [slowdown]
-with open(results) as fh:
-    for r in csv.DictReader(fh):
+for path in results:
+    for r in csv.DictReader(open(path)):
         data[(int(r["batch"]), r["topo"])][int(r["layer"])].append(float(r["slowdown"]))
 batches = sorted({b for b, _ in data})
 

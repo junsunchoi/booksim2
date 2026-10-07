@@ -5,6 +5,9 @@ Per matrix, three BookSim runs with the configs in experiments/nonuniform/cfg/:
   torus     snf HalfRing + DimRotation, --sync round
   fullmesh  snf DimRotation, --sync round (= per-phase barrier)
   clos      one-shot ct, shift order, trace_order = rr, internal_speedup = 2.0
+  bruck     Bruck on the same Clos (--topos bruck; not in the default set): one
+            message per GPU per round, barrier between rounds; uniform reference =
+            exact uniform Bruck, log2(N) rounds of m/2 tokens
 Uniform A2A is not simulated: its reference time is the uniform-like bound
 (m / N tokens per pair, m = mean row sum), which uniform runs match to ~0.03%.
 
@@ -21,7 +24,7 @@ Per row of results.csv:
                   expert-routing/ep64/scripts/*_round_bound.py; empty for clos
 
 Runs from the repository root; resumable (finished rows are skipped).
-usage: python3 experiments/nonuniform/sweep.py [--gpus 64] [--jobs 12]
+usage: python3 experiments/nonuniform/scripts/sweep.py [--gpus 64] [--jobs 12]
            [--glob 'expert-routing/ep<gpus>/batch_*/*.csv'] [--out experiments/nonuniform/sweep<gpus>]
 """
 
@@ -37,7 +40,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 CFG = "experiments/nonuniform/cfg"
-FIELDS = ["batch", "layer", "iteration", "topo", "sim_cycles", "bound_cycles",
+FIELDS = ["batch", "variant", "layer", "iteration", "topo", "sim_cycles", "bound_cycles",
           "uniform_cycles", "slowdown", "bound_slowdown", "global_round_slowdown", "busiest_flits", "file"]
 
 
@@ -61,6 +64,20 @@ def clos_bounds(T, token_bytes, flit_bytes, ports):
     share = m / N * token_bytes
     uni = max(1, math.ceil(share / flit_bytes - 1e-9)) * (N - 1)
     return busiest / ports, uni / ports
+
+
+def parse_path(path):
+    """(batch, variant, layer, iteration) of a matrix path; variant is the
+    directories between batch_<B>/ and the file (e.g. ep64/eplb32), or ''."""
+    m = re.search(r"batch_(\d+)/(?:(.*)/)?layer_(\d+)_iteration_(\d+)\.csv$", path)
+    if not m:
+        raise RuntimeError(f"cannot parse batch/layer/iteration from {path}")
+    return int(m.group(1)), m.group(2) or "", int(m.group(3)), int(m.group(4))
+
+
+def run_name(path):
+    b, v, l, i = parse_path(path)
+    return "_".join([f"b{b}"] + ([v.replace("/", "_")] if v else []) + [f"l{l:03d}", f"i{i:04d}"])
 
 
 def gen(args, out, opts):
@@ -99,6 +116,21 @@ def run_task(args, path, topo, work):
         uniform, _ = round_bound(gen(args, os.devnull, base + ["--uniform-like", path]))
         cfg = f"{CFG}/{topo}{tag}.cfg"
         extra = []
+    elif topo == "bruck":
+        # Bruck on the Clos: one message per GPU per round, barrier between rounds.
+        # bound = sum over rounds of the largest message (whole flits) / GPU ports;
+        # uniform = exact uniform Bruck, log2(N) rounds of m/2 tokens (no rounding).
+        out = gen(args, sched, ["--dims", str(N), "--types", "fullmesh", "--algo", "bruck",
+                                "--sync", "phase", "--tokens", path])
+        mb = re.search(r"per-round largest message: \[.*\] flits, sum (\d+)", out)
+        if not mb:
+            raise RuntimeError("no Bruck bound in generator output:\n" + out)
+        bound = int(mb.group(1)) / args.clos_ports
+        m_tok = sum(map(sum, T)) / N
+        uniform = (N.bit_length() - 1) * (m_tok / 2) * token_bytes / args.flit_bytes / args.clos_ports
+        glob_bound = None
+        cfg = f"{CFG}/clos{N}.cfg"
+        extra = ["trace_order=rr"]
     else:
         gen(args, sched, ["--dims", str(N), "--types", "fullmesh", "--algo", "ct",
                           "--dest-order", "shift", "--tokens", path])
@@ -115,13 +147,13 @@ def run_task(args, path, topo, work):
     if not m or m.group(1) != m.group(2):
         raise RuntimeError(f"{log}: collective did not complete")
     cycles = int(m.group(3))
-    busy = re.search(r"busiest eject (\d+)" if topo == "clos" else
+    busy = re.search(r"busiest eject (\d+)" if topo in ("clos", "bruck") else
                      r"Network links: busiest (\d+)", text)
     if not args.keep:
         os.remove(sched)
 
-    b, l, i = map(int, re.search(r"batch_(\d+)/layer_(\d+)_iteration_(\d+)", path).groups())
-    return {"batch": b, "layer": l, "iteration": i, "topo": topo,
+    b, v, l, i = parse_path(path)
+    return {"batch": b, "variant": v, "layer": l, "iteration": i, "topo": topo,
             "sim_cycles": cycles, "bound_cycles": f"{bound:.1f}",
             "uniform_cycles": f"{uniform:.1f}",
             "slowdown": f"{cycles / uniform:.4f}", "bound_slowdown": f"{bound / uniform:.4f}",
@@ -135,6 +167,7 @@ def main():
     ap.add_argument("--gpus", type=int, default=64, choices=[64, 256])
     ap.add_argument("--glob", default=None,
                     help="default expert-routing/ep<gpus>/batch_*/layer_*_iteration_*.csv")
+    ap.add_argument("--files", nargs="+", help="explicit matrix paths (instead of --glob)")
     ap.add_argument("--out", default=None)
     ap.add_argument("--jobs", type=int, default=max(1, (os.cpu_count() or 2) - 2))
     ap.add_argument("--topos", default="torus,fullmesh,clos")
@@ -153,7 +186,7 @@ def main():
     if os.path.exists(results):
         with open(results) as f:
             done = {(r["file"], r["topo"]) for r in csv.DictReader(f)}
-    files = sorted(glob.glob(args.glob),
+    files = sorted(args.files or glob.glob(args.glob),
                    key=lambda p: -int(re.search(r"batch_(\d+)", p).group(1)))  # big first
     if not files:
         sys.exit(f"no matrices match {args.glob}; run expert-routing/ep{args.gpus}/unzip.sh first")
@@ -169,9 +202,7 @@ def main():
             w.writeheader()
         futs = {}
         for p, t in tasks:
-            name = re.sub(r".*batch_(\d+)/layer_(\d+)_iteration_(\d+)\.csv",
-                          r"b\1_l\2_i\3", p)
-            futs[pool.submit(run_task, args, p, t, os.path.join(out, "runs", name))] = (p, t)
+            futs[pool.submit(run_task, args, p, t, os.path.join(out, "runs", run_name(p)))] = (p, t)
         for n, fut in enumerate(as_completed(futs), 1):
             p, t = futs[fut]
             try:

@@ -76,10 +76,20 @@ uv run --with numpy --with matplotlib python expert-routing/ep64/scripts/plot_sn
 
 ## 7. `expert-routing/ep64/scripts/plot_sim_slowdown.py` — BookSim simulated slowdown vs layer, one panel per batch
 
-Reads the BookSim sweep (`experiments/nonuniform/sweep.py`, results copied to `experiments/nonuniform/sweep64_remote/results.csv`): non-uniform A2A completion time ÷ uniform-like A2A time for torus 4x4x4 (snf HalfRing + DimRotation, phase barrier, rounds synced per dim), full mesh 4x4x4 (snf DimRotation) and Clos 64 (one-shot ct, `internal_speedup = 2.0`); 16 B flits. Dots = 5 iterations per layer, line = median.
+Reads the no-EPLB BookSim sweep (`experiments/nonuniform/results/fp16/<topo>/ep64/b<batch>_noeplb/results.csv`): non-uniform A2A completion time ÷ uniform-like A2A time for torus 4x4x4 (snf HalfRing + DimRotation, phase barrier, rounds synced per dim), full mesh 4x4x4 (snf DimRotation) and Clos 64 (one-shot ct, `internal_speedup = 2.0`); 16 B flits. Dots = 5 iterations per layer, line = median.
 
 Outputs: `sim_slowdown_by_layer.png`
 
 ```bash
-uv run --with numpy --with matplotlib python expert-routing/ep64/scripts/plot_sim_slowdown.py [results.csv] [outdir]
+uv run --with numpy --with matplotlib python expert-routing/ep64/scripts/plot_sim_slowdown.py [outdir] [results.csv ...]
+```
+
+## 8. `expert-routing/ep64/scripts/plot_clos_slowdown_vs_recv.py` — BookSim Clos slowdown vs recv max/mean
+
+One dot per matrix: x = recv max / recv mean per dst rank (from `torus_round_bound_per_file.csv`), y = BookSim Clos 64 slowdown (one-shot ct, shift + rr, `internal_speedup = 2.0`) from the sweep results; y = x is the receive-imbalance bound.
+
+Outputs: `clos_slowdown_vs_recv.png`
+
+```bash
+uv run --with matplotlib python expert-routing/ep64/scripts/plot_clos_slowdown_vs_recv.py [plots dir] [results.csv ...]
 ```

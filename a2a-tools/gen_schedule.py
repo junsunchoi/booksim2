@@ -22,6 +22,13 @@ Algorithms
   ct   Cut-through one-shot all-to-all. One message per (src, dst, chunk),
        routed in-network in the chunk's dimension order. L/2 ties on torus
        dimensions are split evenly between the + and - directions.
+  bruck  Bruck all-to-all for N = 2^L GPUs (meant for a Clos: run with
+       --dims N --types fullmesh and topology = clos). In round k GPU i sends
+       ONE message to GPU (i + 2^k) mod N holding every block it currently has
+       whose offset (dst - src) mod N has bit k set (blocks are relayed;
+       non-uniform sizes, no padding). A message depends on the messages that
+       delivered the blocks it forwards; --sync phase adds a global barrier
+       between rounds (each round is one phase).
 
 Traffic
   Uniform: every GPU sends bytes_per_gpu / N to every other GPU (the 1/N
@@ -329,7 +336,52 @@ def gen_snf(topo, sched, M, chunks):
                 assert h == d, "SNF left data at the wrong GPU"
 
 
+def gen_bruck(topo, sched, M):
+    N = topo.N
+    L = N.bit_length() - 1
+    if 1 << L != N:
+        sys.exit("bruck needs N = 2^L GPUs")
+    # held[h] = list of [src, dst, bytes, provenance message ids]
+    held = defaultdict(list)
+    for s in range(N):
+        for d in range(N):
+            if s != d and M[s][d] > 0:
+                held[s].append([s, d, M[s][d], set()])
+    for k in range(L):
+        sched.cur_phase, sched.cur_dim, sched.cur_round = k, 0, 0
+        new_held = defaultdict(list)
+        for h in range(N):
+            stay, move = [], []
+            for blk in held[h]:
+                (move if ((blk[1] - blk[0]) % N >> k) & 1 else stay).append(blk)
+            new_held[h].extend(stay)
+            if not move:
+                continue
+            nb = (h + (1 << k)) % N
+            deps = set().union(*(blk[3] for blk in move))
+            mid = sched.add(h, nb, sum(blk[2] for blk in move), 0, 0, deps)
+            for blk in move:
+                new_held[nb].append([blk[0], blk[1], blk[2], {mid}])
+        held = new_held
+    for h, blks in held.items():
+        for blk in blks:
+            assert blk[1] == h, "Bruck left data at the wrong GPU"
+
+
 def summarize(topo, sched, algo, hop_latency):
+    if algo == "bruck":
+        rounds = defaultdict(int)
+        for (s, d, f, *_), ph in zip(sched.msgs, sched.phase):
+            if ph >= 0:
+                rounds[ph] = max(rounds[ph], f)
+        r = [rounds[k] for k in sorted(rounds)]
+        flits = sum(m[2] for m in sched.msgs)
+        print(f"bruck: {len(sched.msgs)} messages, {flits} flits "
+              f"(rounding overhead {flits * sched.flit_bytes / max(sched.bytes_requested, 1) - 1:+.2%})")
+        print(f"  per-round largest message: {r} flits, sum {sum(r)} "
+              f"(bound with a barrier between rounds; divide by GPU ports on a Clos)")
+        return
+
     link = defaultdict(int)
     phase_link = defaultdict(lambda: defaultdict(int))
     round_link = defaultdict(lambda: defaultdict(int))  # (phase, dim, round) -> link -> flits
@@ -397,7 +449,7 @@ def main():
     ap.add_argument("--types", default="torus",
                     help="torus (simulate with topology = multilinktorus) or fullmesh "
                          "(topology = hyperx), one value or one per dimension")
-    ap.add_argument("--algo", choices=["snf", "ct"], required=True)
+    ap.add_argument("--algo", choices=["snf", "ct", "bruck"], required=True)
     ap.add_argument("--no-dimrot", action="store_true",
                     help="one chunk in XYZ order instead of D rotated chunks")
     ap.add_argument("--dest-order", choices=["asc", "shift", "local-first"], default="asc",
@@ -462,6 +514,12 @@ def main():
         if args.sync != "none":
             sys.exit("--sync applies to snf only")
         gen_ct(topo, sched, M, chunks, args.dest_order, args.leaf_size, args.packet_flits)
+    elif args.algo == "bruck":
+        if args.sync not in ("none", "phase"):
+            sys.exit("bruck supports --sync none or phase (barrier between rounds)")
+        gen_bruck(topo, sched, M)
+        if args.sync == "phase":
+            sched.add_phase_barriers()
     else:
         gen_snf(topo, sched, M, chunks)
         if args.sync == "round":

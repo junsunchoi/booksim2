@@ -6,7 +6,7 @@ regenerated), Python 3 (standard library only).
     git clone -b collective-sim <repo-url> booksim2 && cd booksim2
     make -C src -j"$(nproc)"
     expert-routing/ep64/unzip.sh
-    nohup python3 experiments/nonuniform/sweep.py --gpus 64 --jobs "$(nproc)" \
+    nohup python3 experiments/nonuniform/scripts/sweep.py --gpus 64 --jobs "$(nproc)" \
         > experiments/nonuniform/sweep64.log 2>&1 &
 
 Per matrix: torus 4x4x4, full mesh 4x4x4, Clos 64 (internal_speedup = 2.0);
@@ -26,4 +26,4 @@ Stop: `pkill -f sweep.py; pkill -f src/booksim`.
 
 Split across machines with `--glob`, e.g. one batch size each:
 
-    python3 experiments/nonuniform/sweep.py --glob 'expert-routing/ep64/batch_4096/*.csv' --out experiments/nonuniform/sweep64_b4096
+    python3 experiments/nonuniform/scripts/sweep.py --glob 'expert-routing/ep64/batch_4096/*.csv' --out experiments/nonuniform/sweep64_b4096
